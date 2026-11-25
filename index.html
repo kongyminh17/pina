@@ -144,6 +144,22 @@ nav.tabs button[aria-selected="true"] { background: var(--bg); color: var(--ink)
 .lock input { font-size: 28px; letter-spacing: .4em; text-align: center; padding: 12px; border-radius: 12px; border: 2px solid rgba(255,255,255,.3); background: rgba(255,255,255,.08); color: #fff; font-family: var(--display); }
 .lock button { background: var(--accent); color: var(--accent-ink); border: 0; border-radius: 12px; padding: 14px; font-weight: 700; font-size: 16px; }
 .lock p { margin: 0; min-height: 1.4em; color: #ffd75a; font-size: 14px; }
+.pen .pn { display: grid; gap: 2px; }
+.pen .pn small { font-weight: 400; font-size: 12.5px; opacity: .75; }
+details.fold { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 10px; }
+details.fold summary { cursor: pointer; font-family: var(--display); font-weight: 700; font-size: 15px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); padding: 8px 0; }
+details.offcourt .pen { background: var(--surface); color: var(--ink); border: 1px solid var(--line); box-shadow: none; }
+details.fold > .pens { margin-top: 6px; }
+.dlg { position: fixed; inset: 0; z-index: 15; background: rgba(5,10,25,.6); display: grid; align-items: end; justify-items: center; padding: 16px max(16px, env(safe-area-inset-right, 0px)) calc(16px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); }
+.dlgbox { width: 100%; max-width: 420px; background: var(--surface); color: var(--ink); border-radius: 16px; padding: 18px; display: grid; gap: 12px; }
+.dlgbox b { font-size: 18px; }
+.minrow { display: flex; align-items: center; gap: 10px; }
+.minrow input { width: 110px; font-size: 28px; padding: 8px 10px; border-radius: 10px; border: 2px solid var(--line); background: var(--bg); text-align: center; font-family: var(--display); }
+.minrow #minSum { margin-left: auto; font-family: var(--display); font-weight: 800; font-size: 26px; color: var(--accent); }
+.chips { display: flex; gap: 8px; flex-wrap: wrap; }
+.chip { flex: 1; padding: 10px 0; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); font-weight: 600; }
+.dlgbtns { display: flex; gap: 8px; justify-content: flex-end; }
+.dlgbtns .btn { padding: 12px 18px; }
 </style>
 </head><body>
 
@@ -213,6 +229,16 @@ nav.tabs button[aria-selected="true"] { background: var(--bg); color: var(--ink)
   </form>
 </div>
 
+<div class="dlg" id="minDlg" hidden>
+  <form id="minForm" class="dlgbox">
+    <b id="minTitle"></b>
+    <span id="minInfo" class="hint"></span>
+    <div class="minrow"><input id="minInput" type="number" inputmode="numeric" min="1" max="600" aria-label="Počet minut"><span>min</span><span id="minSum" class="num"></span></div>
+    <div class="chips"><button type="button" class="chip" data-m="5">5</button><button type="button" class="chip" data-m="10">10</button><button type="button" class="chip" data-m="15">15</button><button type="button" class="chip" data-m="20">20</button><button type="button" class="chip" data-m="30">30</button></div>
+    <div class="dlgbtns"><button type="button" class="btn" id="minCancel">Zrušit</button><button type="submit" class="btn primary">Zapsat</button></div>
+  </form>
+</div>
+
 <div class="toast" id="toast" hidden><span id="toastText"></span><button id="toastUndo" type="button">Zpět</button></div>
 
 <script>
@@ -228,11 +254,13 @@ nav.tabs button[aria-selected="true"] { background: var(--bg); color: var(--ink)
   // Volání serveru (Code.gs) jako Promise.
   const API_URL = "https://script.google.com/macros/s/AKfycbyOQtXh5U0oqpLVr4DdlxHDcIo18aNWMRkdgyC2Qh-xVMvhrFJhDp0scmh5Fa5zYm2H/exec";
   async function call(fn, ...args) {
-    let r;
+    let r, j;
+    const ctl = new AbortController(); const timer = setTimeout(() => ctl.abort(), 20000);
     try {
-      r = await fetch(API_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ fn, args, pin: store.get("pina.pin") || "" }) });
-    } catch (e) { throw new Error("Bez připojení k tabulce."); }
-    let j; try { j = await r.json(); } catch (e) { throw new Error("Tabulka odpověděla divně. Je nasazená nová verze skriptu?"); }
+      r = await fetch(API_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ fn, args, pin: store.get("pina.pin") || "" }), signal: ctl.signal });
+      j = await r.json();
+    } catch (e) { const err = new Error("Bez signálu."); err.code = "net"; throw err; }
+    finally { clearTimeout(timer); }
     if (!j.ok) {
       if (j.code === "pin" || j.code === "locked" || j.code === "nopin") { if (j.code === "pin") store.set("pina.pin", ""); showLock(j.error); }
       const err = new Error(j.error || "Neznámá chyba."); err.code = j.code; throw err;
@@ -240,14 +268,28 @@ nav.tabs button[aria-selected="true"] { background: var(--bg); color: var(--ink)
     return j.result;
   }
 
-  const S = { loaded: false, players: [], penalties: [], matches: [], events: [], pending: [],
+  const loadJSON = (k, d) => { try { const v = JSON.parse(store.get(k) || "null"); return v == null ? d : v; } catch (e) { return d; } };
+  const S = { loaded: false, players: [], penalties: [], matches: [], events: [], serverMatches: [],
+    pending: loadJSON("pina.outbox", []), localMatches: loadJSON("pina.localMatches", []), offline: false, flushing: null,
     matchId: store.get("pina.match") || null, player: null, tab: "klik", scope: "match", busy: 0 };
 
-  function apply(st) {
-    S.players = st.players; S.penalties = st.penalties; S.events = st.events;
-    S.matches = st.matches.slice().sort((a, b) => (b.date || "").localeCompare(a.date || "") || (b.id > a.id ? 1 : -1));
+  function saveQueue() { store.set("pina.outbox", JSON.stringify(S.pending)); store.set("pina.localMatches", JSON.stringify(S.localMatches)); }
+  function mergeMatches() {
+    S.localMatches = S.localMatches.filter(m => !S.serverMatches.some(x => x.id === m.id) && S.pending.some(p => p.matchId === m.id));
+    S.matches = S.serverMatches.concat(S.localMatches).sort((a, b) => (b.date || "").localeCompare(a.date || "") || (b.id > a.id ? 1 : -1));
+  }
+  function apply(st, fromCache) {
+    S.players = st.players; S.penalties = st.penalties; S.events = st.events; S.serverMatches = st.matches;
+    if (!fromCache) store.set("pina.state", JSON.stringify(st));
+    mergeMatches(); saveQueue();
     if (!currentMatch() && S.matches.length) S.matchId = S.matches[0].id;
-    S.loaded = true; render();
+    S.loaded = true; render(); updateStatus();
+  }
+  function updateStatus() {
+    const n = S.pending.length;
+    if (n) setStatus((S.offline ? "Bez signálu · " : "Odesílám · ") + n + (n === 1 ? " ťuknutí čeká" : n < 5 ? " ťuknutí čekají" : " ťuknutí čeká") + " na odeslání");
+    else if (S.offline) setStatus("Bez signálu · ukazuju poslední uložená data");
+    else setStatus("");
   }
   function allEvents() { return S.events.concat(S.pending.filter(p => !S.events.some(e => e.id === p.id))); }
   function currentMatch() { return S.matches.find(m => m.id === S.matchId) || null; }
@@ -277,14 +319,30 @@ nav.tabs button[aria-selected="true"] { background: var(--bg); color: var(--ink)
     const pb = $("pens"); pb.replaceChildren();
     if (!S.penalties.length && S.loaded) pb.append(el("div", "empty", "V tabulce na listu Tresty zatím nic není."));
     if (S.penalties.length && !S.player) pb.append(el("p", "hint", "Nejdřív ťukni na hráče, pak na trest."));
-    let lastCat = null;
-    for (const t of S.penalties) {
-      if ((t.cat || "") !== lastCat) { lastCat = t.cat || ""; if (lastCat) pb.append(el("div", "cat", lastCat)); }
-      const b = el("button", "pen"); b.type = "button"; b.disabled = !S.player;
-      b.append(el("span", null, t.label), el("span", "p num", kc(t.price)));
-      b.onclick = () => addPenalty(t);
-      pb.append(b);
-    }
+    const penButtons = (list, box) => {
+      let lastCat = null;
+      for (const t of list) {
+        if ((t.cat || "") !== lastCat) { lastCat = t.cat || ""; if (lastCat) box.append(el("div", "cat", lastCat)); }
+        const b = el("button", "pen"); b.type = "button"; b.disabled = !S.player;
+        const name = el("span", "pn", t.label); if (t.desc) name.append(el("small", null, t.desc));
+        b.append(name, el("span", "p num", t.perMin ? kc(t.price) + "/min" : kc(t.price)));
+        b.onclick = () => addPenalty(t);
+        box.append(b);
+      }
+    };
+    // První kategorie během zápasu (Hra) je vidět hned, ostatní kategorie a „Mimo hřiště“ jsou rozbalovací.
+    if (!S.offOpen || typeof S.offOpen !== "object") S.offOpen = {};
+    const fold = (key, title, list, cls) => {
+      const d = el("details", "fold " + cls); d.open = !!S.offOpen[key]; d.ontoggle = () => { S.offOpen[key] = d.open; };
+      d.append(el("summary", null, title));
+      const inner = el("div", "pens"); penButtons(list, inner); d.append(inner); pb.append(d);
+    };
+    const on = S.penalties.filter(t => t.onCourt !== false);
+    const cats = [...new Set(on.map(t => t.cat || ""))];
+    if (cats.length) penButtons(on.filter(t => (t.cat || "") === cats[0]), pb);
+    for (const c of cats.slice(1)) fold("cat:" + c, c || "Ostatní", on.filter(t => (t.cat || "") === c).map(t => ({ ...t, cat: "" })), "oncourt");
+    const off = S.penalties.filter(t => t.onCourt === false);
+    if (off.length) fold("off", "Mimo hřiště (docházka, výbava, ostatní)", off, "offcourt");
     const lg = $("log"); lg.replaceChildren();
     const recent = ev.slice().sort((a, b) => b.at - a.at).slice(0, 12);
     if (!recent.length) { lg.append(el("div", "empty", S.matchId ? "V tomhle zápase zatím nikdo nic nezkazil." : "První ťuknutí založí dnešní zápas.")); return; }
@@ -292,9 +350,9 @@ nav.tabs button[aria-selected="true"] { background: var(--bg); color: var(--ink)
     for (const e of recent) {
       const r = el("div", "row");
       r.append(el("span", "t num", new Date(e.at).toLocaleTimeString("cs-CZ", { hour: "2-digit", minute: "2-digit" })));
-      const w = el("div", "w"); w.append(el("b", null, e.playerName), el("span", null, e.label + (e.pending ? " · ukládám…" : ""))); r.append(w);
+      const w = el("div", "w"); w.append(el("b", null, e.playerName), el("span", null, e.label + (e.pending ? " · čeká na odeslání" : ""))); r.append(w);
       r.append(el("span", "num", kc(e.price)));
-      r.append(e.pending ? el("span") : deleteButton(() => deleteEvent(e.id), "Smazat"));
+      r.append(S.flushing === e.id ? el("span") : deleteButton(() => deleteEvent(e.id), "Smazat"));
       list.append(r);
     }
     lg.append(list);
@@ -369,29 +427,68 @@ nav.tabs button[aria-selected="true"] { background: var(--bg); color: var(--ink)
   }
   function fail(e) { toast((e && e.message) ? "Nepovedlo se: " + e.message : "Nepovedlo se uložit. Zkus to znovu."); }
 
-  async function addPenalty(t) {
-    const p = S.players.find(x => x.id === S.player); if (!p) return;
-    const id = "e" + rid();
-    const pend = { id, at: Date.now(), matchId: currentMatch() ? S.matchId : "", playerId: p.id, playerName: p.name, penaltyId: t.id, label: t.label, price: t.price, pending: true };
-    S.pending.push(pend); S.busy++; render();
-    toast(`${p.name}: ${t.label} (${kc(t.price)})`, () => deleteEvent(id));
-    try {
-      const r = await call("addEvent", pend.matchId, p.id, t.id, id);
-      S.matchId = r.matchId; store.set("pina.match", r.matchId);
-      S.pending = S.pending.filter(x => x.id !== id); apply(r.state);
-    } catch (e) { S.pending = S.pending.filter(x => x.id !== id); render(); fail(e); }
-    finally { S.busy--; }
+  function askMinutes(t) {
+    $("minTitle").textContent = t.label;
+    $("minInfo").textContent = kc(t.price) + " za minutu" + (t.cap ? ", maximálně " + kc(t.cap) : "");
+    $("minInput").value = ""; $("minDlg").hidden = false; updMin();
+    $("minForm").onsubmit = (ev) => { ev.preventDefault(); const q = Math.round(Number($("minInput").value)); if (!(q >= 1)) return; $("minDlg").hidden = true; addPenalty(t, Math.min(q, 600)); };
+    function updMin() { const q = Math.round(Number($("minInput").value)) || 0; let c = t.price * q; if (t.cap) c = Math.min(c, t.cap); $("minSum").textContent = q ? "= " + kc(c) : ""; }
+    $("minInput").oninput = updMin;
+    document.querySelectorAll("#minDlg .chip").forEach(c => c.onclick = () => { $("minInput").value = c.dataset.m; updMin(); });
+    setTimeout(() => $("minInput").focus(), 50);
   }
+  $("minCancel").onclick = () => { $("minDlg").hidden = true; };
+
+  function addPenalty(t, minutes) {
+    const p = S.players.find(x => x.id === S.player); if (!p) return;
+    if (t.perMin && !minutes) return askMinutes(t);
+    let label = t.label, price = t.price;
+    if (t.perMin) { price = t.price * minutes; if (t.cap) price = Math.min(price, t.cap); label = t.label + " (" + minutes + " min)"; }
+    if (!currentMatch()) {
+      const m = { id: "m" + rid(), name: "Zápas", date: today(), local: true };
+      S.localMatches.push(m); S.matchId = m.id; store.set("pina.match", m.id);
+    }
+    const id = "e" + rid();
+    S.pending.push({ id, at: Date.now(), matchId: S.matchId, playerId: p.id, playerName: p.name, penaltyId: t.id, label, price, minutes: minutes || null, pending: true });
+    mergeMatches(); saveQueue(); render(); updateStatus();
+    toast(`${p.name}: ${label} (${kc(price)})`, () => deleteEvent(id));
+    flush();
+  }
+
+  // Odesílá frontu ťuknutí jedno po druhém, dokud to jde.
+  async function flush() {
+    if (S.flushing || !S.pending.length || !$("lock").hidden) return;
+    while (S.pending.length) {
+      const item = S.pending[0];
+      S.flushing = item.id; render();
+      try {
+        const r = await call("addEvent", item.matchId, item.playerId, item.penaltyId, item.id, item.at, item.minutes);
+        S.offline = false;
+        S.pending = S.pending.filter(x => x.id !== item.id);
+        if (S.matchId === item.matchId) { S.matchId = r.matchId; store.set("pina.match", r.matchId); }
+        S.flushing = null; apply(r.state);
+      } catch (e) {
+        S.flushing = null;
+        if (e.code === "net") { S.offline = true; break; }
+        if (e.code === "pin" || e.code === "nopin" || e.code === "locked") break;
+        S.pending = S.pending.filter(x => x.id !== item.id); saveQueue();
+        toast("Zápis " + item.playerName + " (" + item.label + ") se nepovedl uložit: " + e.message);
+      }
+    }
+    S.flushing = null; saveQueue(); render(); updateStatus();
+  }
+
   async function deleteEvent(id) {
+    for (let i = 0; i < 80 && S.flushing === id; i++) await new Promise(r => setTimeout(r, 250));
+    if (S.pending.some(x => x.id === id)) { S.pending = S.pending.filter(x => x.id !== id); mergeMatches(); saveQueue(); render(); updateStatus(); return; }
     S.busy++;
-    // pokud ještě čeká na uložení, počkej
-    for (let i = 0; i < 40 && S.pending.some(x => x.id === id); i++) await new Promise(r => setTimeout(r, 250));
     S.events = S.events.filter(e => e.id !== id); render();
-    try { apply(await call("deleteEvent", id)); } catch (e) { fail(e); } finally { S.busy--; }
+    try { apply(await call("deleteEvent", id)); } catch (e) { fail(e.code === "net" ? new Error("bez signálu nejde mazat uložené zápisy.") : e); } finally { S.busy--; }
   }
   async function deleteMatch(id) {
+    if (S.localMatches.some(m => m.id === id)) { S.pending = S.pending.filter(x => x.matchId !== id); mergeMatches(); saveQueue(); if (S.matchId === id) S.matchId = null; render(); updateStatus(); return; }
     S.busy++;
-    try { apply(await call("deleteMatch", id)); } catch (e) { fail(e); } finally { S.busy--; }
+    try { apply(await call("deleteMatch", id)); } catch (e) { fail(e.code === "net" ? new Error("bez signálu nejde mazat zápasy.") : e); } finally { S.busy--; }
   }
 
   document.querySelectorAll("nav.tabs button").forEach(b => b.onclick = () => {
@@ -428,19 +525,25 @@ nav.tabs button[aria-selected="true"] { background: var(--bg); color: var(--ink)
     ev.preventDefault();
     const pin = $("pinInput").value.trim(); if (!pin) return;
     store.set("pina.pin", pin); $("lockMsg").textContent = "Ověřuji…";
-    try { const st = await call("getState"); $("lock").hidden = true; apply(st); setStatus(""); }
+    try { const st = await call("getState"); $("lock").hidden = true; apply(st); flush(); }
     catch (e) { if (e.code !== "pin" && e.code !== "locked" && e.code !== "nopin") $("lockMsg").textContent = e.message; }
   };
 
-  // Načtení a průběžné obnovování (kvůli kliknutím ostatních).
-  async function refresh(first) {
-    if (S.busy || document.hidden || !$("lock").hidden) return;
-    try { const st = await call("getState"); if (!S.busy) apply(st); setStatus(""); }
-    catch (e) { if (first || !S.loaded) setStatus("Data se nepodařilo načíst. " + (e.message || "")); }
+  // Načtení a průběžné obnovování (kvůli kliknutím ostatních a frontě bez signálu).
+  async function refresh() {
+    if (S.busy || S.flushing || document.hidden || !$("lock").hidden) return;
+    if (S.pending.length) return flush();
+    try { const st = await call("getState"); S.offline = false; if (!S.busy && !S.flushing) apply(st); }
+    catch (e) { if (e.code === "net") { S.offline = true; updateStatus(); } else if (!S.loaded) setStatus("Data se nepodařilo načíst. " + (e.message || "")); }
   }
-  if (!store.get("pina.pin")) showLock(""); else refresh(true);
+  const cached = loadJSON("pina.state", null);
+  if (cached) apply(cached, true);
+  if (!store.get("pina.pin")) showLock(""); else refresh();
   setInterval(refresh, 5000);
   document.addEventListener("visibilitychange", () => { if (!document.hidden) refresh(); });
+  window.addEventListener("online", () => refresh());
+
+  if ("serviceWorker" in navigator && window.isSecureContext) navigator.serviceWorker.register("sw.js").catch(() => {});
 })();
 </script>
 </body></html>
