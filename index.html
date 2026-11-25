@@ -1,7 +1,5 @@
 <!DOCTYPE html>
-<html lang="cs">
-<head>
-<meta charset="utf-8">
+<html lang="cs"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Pína</title>
 <meta name="theme-color" content="#01164c">
@@ -12,12 +10,408 @@
 <link rel="apple-touch-icon" href="icon-180.png">
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
 <link rel="manifest" href="manifest.webmanifest">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&family=Inter:wght@400;500;600&display=swap">
 <style>
-  html, body { margin: 0; height: 100%; background: #01164c; }
-  iframe { position: fixed; inset: env(safe-area-inset-top, 0px) 0 0 0; width: 100%; height: calc(100% - env(safe-area-inset-top, 0px)); border: 0; }
+/* Layout: one-column phone app. Sticky scoreboard header with match + total, tabs at the bottom, big tap targets. */
+:root {
+  --bg: #eef2f7;
+  --surface: #ffffff;
+  --ink: #142033;
+  --muted: #5b6b82;
+  --line: #d6dee9;
+  --navy: #1b2f57;
+  --accent: #f5b800;      /* míč */
+  --accent-ink: #1b1400;
+  --sel: #1b2f57;
+  --sel-ink: #ffffff;
+  --danger: #c2372b;
+  --ok: #1f8a4c;
+  --display: "Barlow Condensed", "Arial Narrow", system-ui, sans-serif;
+  --body: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0d1420; --surface: #172235; --ink: #e7edf6; --muted: #93a3bb; --line: #2a3a54;
+  --navy: #0f1c33; --accent: #ffc928; --accent-ink: #1b1400; --sel: #ffc928; --sel-ink: #1b1400;
+  --danger: #ff6b5e; --ok: #4fd08a; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #0d1420; --surface: #172235; --ink: #e7edf6; --muted: #93a3bb; --line: #2a3a54;
+  --navy: #0f1c33; --accent: #ffc928; --accent-ink: #1b1400; --sel: #ffc928; --sel-ink: #1b1400;
+  --danger: #ff6b5e; --ok: #4fd08a; color-scheme: dark }
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html { padding-top: env(safe-area-inset-top, 0px); background: var(--navy); }
+html, body { margin: 0; }
+body { min-height: 100%; -webkit-tap-highlight-color: transparent; }
+.players .empty { grid-column: 1 / -1; }
+html, body { height: 100%; }
+body { background: var(--bg); color: var(--ink); font-family: var(--body); font-size: 15px; line-height: 1.4; }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--navy); }
+button, input, select { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.num { font-variant-numeric: tabular-nums; }
+
+.wrap { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); max-width: 720px; margin: 0 auto; }
+
+header.board { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--navy); color: #fff; }
+header.board .wrap { padding-block: 10px 12px; display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; align-items: end; }
+.brand { font-family: var(--display); font-weight: 800; font-size: 13px; letter-spacing: .14em; text-transform: uppercase; color: #ffd75a; }
+.matchsel { grid-column: 1; min-width: 0; display: flex; gap: 8px; align-items: center; }
+.matchsel select { min-width: 0; flex: 1; background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.25); color: #fff; border-radius: 8px; padding: 6px 8px; font-family: var(--display); font-size: 20px; font-weight: 700; }
+.matchsel select option { color: #000; }
+.iconbtn { background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.25); color: #fff; border-radius: 8px; padding: 6px 10px; font-weight: 600; white-space: nowrap; }
+.total { grid-column: 2; grid-row: 1 / span 2; text-align: right; }
+.total .lbl { font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: #b8c6de; }
+.total .val { font-family: var(--display); font-weight: 800; font-size: 40px; line-height: 1; color: var(--accent); }
+.newmatch { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+.newmatch input { flex: 1 1 140px; min-width: 0; border-radius: 8px; border: 1px solid rgba(255,255,255,.3); background: rgba(255,255,255,.95); color: #142033; padding: 8px; }
+.status { font-size: 12px; color: #b8c6de; grid-column: 1 / -1; }
+
+main { padding-bottom: calc(84px + env(safe-area-inset-bottom, 0px)); }
+main .wrap { padding-block: 14px; display: grid; gap: 18px; }
+h2 { font-family: var(--display); font-weight: 700; font-size: 15px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin: 0 0 8px; }
+
+.players { display: grid; grid-template-columns: repeat(auto-fill, minmax(102px, 1fr)); gap: 8px; }
+.pl { background: var(--surface); border: 2px solid var(--line); border-radius: 12px; padding: 10px 8px; text-align: left; min-height: 62px; display: flex; flex-direction: column; justify-content: space-between; gap: 2px; }
+.pl .n { font-weight: 600; overflow-wrap: anywhere; }
+.pl .s { font-size: 13px; color: var(--muted); }
+.pl[aria-pressed="true"] { background: var(--sel); color: var(--sel-ink); border-color: var(--sel); }
+.pl[aria-pressed="true"] .s { color: inherit; opacity: .8; }
+
+.pens { display: grid; gap: 8px; }
+.pen { display: flex; justify-content: space-between; align-items: center; gap: 12px; background: var(--accent); color: var(--accent-ink); border: 0; border-radius: 12px; padding: 14px 16px; min-height: 56px; text-align: left; font-weight: 600; font-size: 16px; box-shadow: 0 2px 0 rgba(0,0,0,.18); }
+.pen:active { transform: translateY(1px); box-shadow: none; }
+.pen .p { font-family: var(--display); font-weight: 800; font-size: 22px; white-space: nowrap; }
+.pen:disabled { opacity: .45; cursor: not-allowed; }
+.cat { font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin-top: 6px; }
+.erow input.catin { flex: 0 0 92px; }
+.edit .erow { flex-wrap: wrap; }
+.hint { color: var(--muted); font-size: 13px; margin: 0; }
+
+.log { display: grid; gap: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+.log .row { display: grid; grid-template-columns: 44px 1fr auto auto; gap: 10px; align-items: center; padding: 9px 12px; border-top: 1px solid var(--line); }
+.log .row:first-child { border-top: 0; }
+.log .t { color: var(--muted); font-size: 12px; }
+.log .w { min-width: 0; }
+.log .w b { font-weight: 600; }
+.log .w span { color: var(--muted); font-size: 13px; display: block; }
+.x { background: none; border: 1px solid var(--line); border-radius: 8px; padding: 4px 8px; color: var(--muted); font-size: 13px; }
+.x.confirm { border-color: var(--danger); color: var(--danger); }
+
+.empty { background: var(--surface); border: 1px dashed var(--line); border-radius: 12px; padding: 16px; color: var(--muted); }
+
+.tablebox { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th, td { padding: 8px 10px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--line); }
+th:first-child, td:first-child { text-align: left; position: sticky; left: 0; background: var(--surface); }
+thead th { font-size: 12px; color: var(--muted); font-weight: 600; white-space: normal; vertical-align: bottom; min-width: 64px; }
+tfoot td { font-weight: 700; border-bottom: 0; }
+td.sum { font-weight: 700; }
+.toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.toolbar select { flex: 1 1 180px; min-width: 0; padding: 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); }
+.btn { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; font-weight: 600; }
+.btn.primary { background: var(--navy); border-color: var(--navy); color: #fff; }
+.btn.danger { color: var(--danger); border-color: var(--danger); }
+
+.cards { display: grid; gap: 8px; }
+.mrow { display: flex; justify-content: space-between; gap: 12px; align-items: center; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; }
+.mrow .w { min-width: 0; }
+.mrow .w span { display: block; color: var(--muted); font-size: 13px; }
+.mrow .v { font-family: var(--display); font-weight: 800; font-size: 22px; }
+
+.edit { display: grid; gap: 8px; }
+.erow { display: flex; gap: 8px; align-items: center; }
+.erow input { min-width: 0; flex: 1; padding: 9px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); }
+.erow input.price { flex: 0 0 84px; text-align: right; }
+.erow .unit { color: var(--muted); font-size: 13px; }
+.note { font-size: 13px; color: var(--muted); }
+.saved { color: var(--ok); font-weight: 600; font-size: 13px; }
+
+nav.tabs { position: fixed; left: 0; right: 0; bottom: 0; z-index: 6; background: var(--surface); border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom, 0px); }
+nav.tabs .wrap { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; padding-block: 8px; }
+nav.tabs button { background: none; border: 0; border-radius: 10px; padding: 10px 4px; font-family: var(--display); font-weight: 700; font-size: 16px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+nav.tabs button[aria-selected="true"] { background: var(--bg); color: var(--ink); box-shadow: inset 0 -3px 0 var(--accent); }
+
+.toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(84px + env(safe-area-inset-bottom, 0px)); z-index: 7; background: var(--ink); color: var(--bg); border-radius: 12px; padding: 10px 12px 10px 16px; display: flex; gap: 14px; align-items: center; max-width: calc(100% - 32px); box-shadow: 0 6px 24px rgba(0,0,0,.25); }
+.toast button { background: var(--accent); color: var(--accent-ink); border: 0; border-radius: 8px; padding: 6px 10px; font-weight: 700; }
+@media (prefers-reduced-motion: no-preference) { .toast { animation: up .18s ease-out; } @keyframes up { from { transform: translate(-50%, 8px); opacity: 0; } } }
 </style>
-</head>
-<body>
-<iframe src="https://script.google.com/macros/s/AKfycbyOQtXh5U0oqpLVr4DdlxHDcIo18aNWMRkdgyC2Qh-xVMvhrFJhDp0scmh5Fa5zYm2H/exec" title="Pína" allow="clipboard-write"></iframe>
-</body>
-</html>
+</head><body>
+
+<header class="board">
+  <div class="wrap">
+    <div class="brand">Pína · pokladna trestů</div>
+    <div class="total"><div class="lbl">Zápas</div><div class="val num" id="matchTotal">0 Kč</div></div>
+    <div class="matchsel">
+      <select id="matchSelect" aria-label="Vybraný zápas"></select>
+      <button class="iconbtn" id="newMatchBtn" type="button">+ Zápas</button>
+    </div>
+    <form class="newmatch" id="newMatchForm" hidden>
+      <input id="newMatchName" placeholder="Soupeř, např. TJ Sokol B" aria-label="Název zápasu">
+      <input id="newMatchDate" type="date" aria-label="Datum zápasu">
+      <button class="iconbtn" type="submit">Založit</button>
+    </form>
+    <div class="status" id="status">Načítám data…</div>
+  </div>
+</header>
+
+<main>
+  <section id="tab-klik" class="wrap">
+    <div>
+      <h2>1. Kdo</h2>
+      <div class="players" id="players"></div>
+    </div>
+    <div>
+      <h2>2. Za co</h2>
+      <div class="pens" id="pens"></div>
+    </div>
+    <div>
+      <h2>Poslední zápisy</h2>
+      <div id="log"></div>
+    </div>
+  </section>
+
+  <section id="tab-prehled" class="wrap" hidden>
+    <div class="toolbar">
+      <select id="scopeSelect" aria-label="Rozsah přehledu"></select>
+      <button class="btn primary" id="copyBtn" type="button">Kopírovat tabulku</button>
+    </div>
+    <p class="hint">Hráče, tresty a ceny upravuješ přímo v Google Tabulce (listy Hráči a Tresty). Všechny zápisy jsou na listu Zápisy.</p>
+    <p class="hint" id="copyHint">Zkopíruje tabulku tak, aby šla rovnou vložit do Excelu nebo Google Tabulek.</p>
+    <div class="tablebox" id="table"></div>
+    <div>
+      <h2>Zápasy</h2>
+      <div class="cards" id="matchList"></div>
+    </div>
+  </section>
+
+</main>
+
+<nav class="tabs" aria-label="Sekce">
+  <div class="wrap" role="tablist">
+    <button role="tab" data-tab="klik" aria-selected="true" type="button">Klikání</button>
+    <button role="tab" data-tab="prehled" aria-selected="false" type="button">Přehled</button>
+      </div>
+</nav>
+
+<div class="toast" id="toast" hidden><span id="toastText"></span><button id="toastUndo" type="button">Zpět</button></div>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+  const kc = (n) => (Math.round(n) || 0).toLocaleString("cs-CZ") + " Kč";
+  const rid = () => (Date.now().toString(36) + Math.random().toString(36).slice(2, 8));
+  const store = { get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }, set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} } };
+  const fmtDate = (s) => { if (!s) return ""; const [y, m, d] = s.split("-"); return `${+d}. ${+m}. ${y}`; };
+  const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; };
+
+  // Volání serveru (Code.gs) jako Promise.
+  const API_URL = "https://script.google.com/macros/s/AKfycbyOQtXh5U0oqpLVr4DdlxHDcIo18aNWMRkdgyC2Qh-xVMvhrFJhDp0scmh5Fa5zYm2H/exec";
+  async function call(fn, ...args) {
+    let r;
+    try {
+      r = await fetch(API_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ fn, args }) });
+    } catch (e) { throw new Error("Bez připojení k tabulce."); }
+    let j; try { j = await r.json(); } catch (e) { throw new Error("Tabulka odpověděla divně. Je nasazená nová verze skriptu?"); }
+    if (!j.ok) throw new Error(j.error || "Neznámá chyba.");
+    return j.result;
+  }
+
+  const S = { loaded: false, players: [], penalties: [], matches: [], events: [], pending: [],
+    matchId: store.get("pina.match") || null, player: null, tab: "klik", scope: "match", busy: 0 };
+
+  function apply(st) {
+    S.players = st.players; S.penalties = st.penalties; S.events = st.events;
+    S.matches = st.matches.slice().sort((a, b) => (b.date || "").localeCompare(a.date || "") || (b.id > a.id ? 1 : -1));
+    if (!currentMatch() && S.matches.length) S.matchId = S.matches[0].id;
+    S.loaded = true; render();
+  }
+  function allEvents() { return S.events.concat(S.pending.filter(p => !S.events.some(e => e.id === p.id))); }
+  function currentMatch() { return S.matches.find(m => m.id === S.matchId) || null; }
+  function matchEvents(id) { return allEvents().filter(e => e.matchId === id || (!id && e.matchId === "")); }
+  function matchLabel(m) { return (m.name || "Zápas") + (m.date ? " · " + fmtDate(m.date) : ""); }
+
+  function renderHeader() {
+    const sel = $("matchSelect"); sel.replaceChildren();
+    if (!S.matches.length) { const o = el("option", null, "Zatím žádný zápas"); o.value = ""; sel.append(o); }
+    for (const m of S.matches) { const o = el("option", null, matchLabel(m)); o.value = m.id; sel.append(o); }
+    sel.value = S.matchId || "";
+    $("matchTotal").textContent = kc(matchEvents(S.matchId || "").reduce((a, e) => a + e.price, 0));
+  }
+
+  function renderKlik() {
+    const box = $("players"); box.replaceChildren();
+    const ev = matchEvents(S.matchId || "");
+    if (!S.players.length) box.append(el("div", "empty", S.loaded ? "V tabulce na listu Hráči zatím nikdo není." : "Načítám hráče…"));
+    for (const p of S.players) {
+      const b = el("button", "pl"); b.type = "button";
+      b.setAttribute("aria-pressed", String(S.player === p.id));
+      const sum = ev.filter(e => e.playerId === p.id).reduce((a, e) => a + e.price, 0);
+      b.append(el("span", "n", p.name), el("span", "s num", sum ? kc(sum) : "–"));
+      b.onclick = () => { S.player = S.player === p.id ? null : p.id; renderKlik(); };
+      box.append(b);
+    }
+    const pb = $("pens"); pb.replaceChildren();
+    if (!S.penalties.length && S.loaded) pb.append(el("div", "empty", "V tabulce na listu Tresty zatím nic není."));
+    if (S.penalties.length && !S.player) pb.append(el("p", "hint", "Nejdřív ťukni na hráče, pak na trest."));
+    let lastCat = null;
+    for (const t of S.penalties) {
+      if ((t.cat || "") !== lastCat) { lastCat = t.cat || ""; if (lastCat) pb.append(el("div", "cat", lastCat)); }
+      const b = el("button", "pen"); b.type = "button"; b.disabled = !S.player;
+      b.append(el("span", null, t.label), el("span", "p num", kc(t.price)));
+      b.onclick = () => addPenalty(t);
+      pb.append(b);
+    }
+    const lg = $("log"); lg.replaceChildren();
+    const recent = ev.slice().sort((a, b) => b.at - a.at).slice(0, 12);
+    if (!recent.length) { lg.append(el("div", "empty", S.matchId ? "V tomhle zápase zatím nikdo nic nezkazil." : "První ťuknutí založí dnešní zápas.")); return; }
+    const list = el("div", "log");
+    for (const e of recent) {
+      const r = el("div", "row");
+      r.append(el("span", "t num", new Date(e.at).toLocaleTimeString("cs-CZ", { hour: "2-digit", minute: "2-digit" })));
+      const w = el("div", "w"); w.append(el("b", null, e.playerName), el("span", null, e.label + (e.pending ? " · ukládám…" : ""))); r.append(w);
+      r.append(el("span", "num", kc(e.price)));
+      r.append(e.pending ? el("span") : deleteButton(() => deleteEvent(e.id), "Smazat"));
+      list.append(r);
+    }
+    lg.append(list);
+  }
+
+  function deleteButton(action, label) {
+    const x = el("button", "x", label); x.type = "button"; let armed = false, t;
+    x.onclick = () => {
+      if (!armed) { armed = true; x.textContent = "Opravdu?"; x.classList.add("confirm"); t = setTimeout(() => { armed = false; x.textContent = label; x.classList.remove("confirm"); }, 3000); return; }
+      clearTimeout(t); action();
+    };
+    return x;
+  }
+
+  function scopeEvents() { return S.scope === "all" ? allEvents() : matchEvents(S.scope === "match" ? (S.matchId || "") : S.scope); }
+  function buildTable() {
+    const ev = scopeEvents();
+    const pens = S.penalties.slice();
+    for (const e of ev) if (!pens.some(p => p.id === e.penaltyId)) pens.push({ id: e.penaltyId, label: e.label });
+    const rows = new Map();
+    for (const p of S.players) rows.set(p.id, { name: p.name, cnt: {}, sum: 0 });
+    for (const e of ev) {
+      if (!rows.has(e.playerId)) rows.set(e.playerId, { name: e.playerName, cnt: {}, sum: 0 });
+      const r = rows.get(e.playerId); r.cnt[e.penaltyId] = (r.cnt[e.penaltyId] || 0) + 1; r.sum += e.price;
+    }
+    const list = Array.from(rows.values()).sort((a, b) => b.sum - a.sum || a.name.localeCompare(b.name, "cs"));
+    return { list, pens, total: ev.reduce((a, e) => a + e.price, 0) };
+  }
+
+  function renderPrehled() {
+    const sc = $("scopeSelect"); sc.replaceChildren();
+    const add = (v, t) => { const o = el("option", null, t); o.value = v; sc.append(o); };
+    add("match", "Vybraný zápas"); add("all", "Celá sezóna (všechny zápasy)");
+    for (const m of S.matches) add(m.id, matchLabel(m));
+    sc.value = S.scope;
+    const { list, pens, total } = buildTable();
+    const box = $("table"); box.replaceChildren();
+    const tb = el("table"), thead = el("thead"), hr = el("tr");
+    hr.append(el("th", null, "Hráč")); for (const p of pens) hr.append(el("th", null, p.label)); hr.append(el("th", null, "Celkem"));
+    thead.append(hr); tb.append(thead);
+    const body = el("tbody");
+    for (const r of list) {
+      const tr = el("tr"); tr.append(el("td", null, r.name));
+      for (const p of pens) tr.append(el("td", "num", r.cnt[p.id] ? "× " + r.cnt[p.id] : "–"));
+      tr.append(el("td", "num sum", kc(r.sum))); body.append(tr);
+    }
+    tb.append(body);
+    const tf = el("tfoot"), fr = el("tr"); fr.append(el("td", null, "Pína celkem"));
+    for (const p of pens) { const c = list.reduce((a, r) => a + (r.cnt[p.id] || 0), 0); fr.append(el("td", "num", c ? "× " + c : "–")); }
+    fr.append(el("td", "num sum", kc(total))); tf.append(fr); tb.append(tf); box.append(tb);
+
+    const ml = $("matchList"); ml.replaceChildren();
+    if (!S.matches.length) ml.append(el("div", "empty", "Zápas se založí sám prvním ťuknutím, nebo tlačítkem + Zápas nahoře."));
+    for (const m of S.matches) {
+      const ev = matchEvents(m.id);
+      const r = el("div", "mrow");
+      const w = el("div", "w"); w.append(el("b", null, m.name || "Zápas"), el("span", null, (m.date ? fmtDate(m.date) + " · " : "") + ev.length + " zápisů")); r.append(w);
+      const right = el("div", "erow"); right.append(el("span", "v num", kc(ev.reduce((a, e) => a + e.price, 0))));
+      right.append(deleteButton(() => deleteMatch(m.id), "Smazat"));
+      r.append(right); ml.append(r);
+    }
+  }
+
+  function render() { renderHeader(); if (S.tab === "klik") renderKlik(); else renderPrehled(); }
+  function setStatus(t) { $("status").textContent = t; $("status").hidden = !t; }
+
+  let toastTimer;
+  function toast(text, undo) {
+    $("toastText").textContent = text; $("toast").hidden = false;
+    $("toastUndo").hidden = !undo; $("toastUndo").onclick = () => { $("toast").hidden = true; if (undo) undo(); };
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => { $("toast").hidden = true; }, 5000);
+  }
+  function fail(e) { toast((e && e.message) ? "Nepovedlo se: " + e.message : "Nepovedlo se uložit. Zkus to znovu."); }
+
+  async function addPenalty(t) {
+    const p = S.players.find(x => x.id === S.player); if (!p) return;
+    const id = "e" + rid();
+    const pend = { id, at: Date.now(), matchId: currentMatch() ? S.matchId : "", playerId: p.id, playerName: p.name, penaltyId: t.id, label: t.label, price: t.price, pending: true };
+    S.pending.push(pend); S.busy++; render();
+    toast(`${p.name}: ${t.label} (${kc(t.price)})`, () => deleteEvent(id));
+    try {
+      const r = await call("addEvent", pend.matchId, p.id, t.id, id);
+      S.matchId = r.matchId; store.set("pina.match", r.matchId);
+      S.pending = S.pending.filter(x => x.id !== id); apply(r.state);
+    } catch (e) { S.pending = S.pending.filter(x => x.id !== id); render(); fail(e); }
+    finally { S.busy--; }
+  }
+  async function deleteEvent(id) {
+    S.busy++;
+    // pokud ještě čeká na uložení, počkej
+    for (let i = 0; i < 40 && S.pending.some(x => x.id === id); i++) await new Promise(r => setTimeout(r, 250));
+    S.events = S.events.filter(e => e.id !== id); render();
+    try { apply(await call("deleteEvent", id)); } catch (e) { fail(e); } finally { S.busy--; }
+  }
+  async function deleteMatch(id) {
+    S.busy++;
+    try { apply(await call("deleteMatch", id)); } catch (e) { fail(e); } finally { S.busy--; }
+  }
+
+  document.querySelectorAll("nav.tabs button").forEach(b => b.onclick = () => {
+    S.tab = b.dataset.tab;
+    document.querySelectorAll("nav.tabs button").forEach(x => x.setAttribute("aria-selected", String(x === b)));
+    for (const t of ["klik", "prehled"]) $("tab-" + t).hidden = t !== S.tab;
+    render(); window.scrollTo(0, 0);
+  });
+  $("matchSelect").onchange = (e) => { S.matchId = e.target.value || null; store.set("pina.match", S.matchId || ""); render(); };
+  $("newMatchBtn").onclick = () => { const f = $("newMatchForm"); f.hidden = !f.hidden; if (!f.hidden) { $("newMatchDate").value = today(); $("newMatchName").focus(); } };
+  $("newMatchForm").onsubmit = async (ev) => {
+    ev.preventDefault(); S.busy++;
+    try {
+      const r = await call("addMatch", $("newMatchName").value.trim() || "Zápas", $("newMatchDate").value || today());
+      S.matchId = r.id; store.set("pina.match", r.id); $("newMatchForm").hidden = true; $("newMatchName").value = ""; apply(r.state);
+    } catch (e) { fail(e); } finally { S.busy--; }
+  };
+  $("scopeSelect").onchange = (e) => { S.scope = e.target.value; renderPrehled(); };
+  $("copyBtn").onclick = () => {
+    const { list, pens, total } = buildTable();
+    const lines = [["Hráč"].concat(pens.map(p => p.label), ["Celkem (Kč)"]).join("\t")];
+    for (const r of list) lines.push([r.name].concat(pens.map(p => r.cnt[p.id] || 0), [Math.round(r.sum)]).join("\t"));
+    lines.push(["Celkem"].concat(pens.map(p => list.reduce((a, r) => a + (r.cnt[p.id] || 0), 0)), [Math.round(total)]).join("\t"));
+    const text = lines.join("\n");
+    const done = () => { $("copyHint").textContent = "Zkopírováno. Vlož to do tabulky (Ctrl+V)."; };
+    const fallback = () => { const ta = el("textarea"); ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0"; document.body.append(ta); ta.select(); try { document.execCommand("copy"); done(); } catch (e) {} ta.remove(); };
+    try { navigator.clipboard.writeText(text).then(done, fallback); } catch (e) { fallback(); }
+  };
+
+  render();
+
+  // Načtení a průběžné obnovování (kvůli kliknutím ostatních).
+  async function refresh(first) {
+    if (S.busy || document.hidden) return;
+    try { const st = await call("getState"); if (!S.busy) apply(st); setStatus(""); }
+    catch (e) { if (first || !S.loaded) setStatus("Data se nepodařilo načíst. " + (e.message || "")); }
+  }
+  refresh(true);
+  setInterval(refresh, 5000);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) refresh(); });
+})();
+</script>
+</body></html>
