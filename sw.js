@@ -1,5 +1,5 @@
 // Pína – offline cache. Stránku bere ze sítě, a když není signál, z uložené kopie.
-const CACHE = 'pina-v2';
+const CACHE = 'pina-v3';
 const FILES = ['./', './index.html', './manifest.webmanifest', './icon-180.png', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', (e) => {
